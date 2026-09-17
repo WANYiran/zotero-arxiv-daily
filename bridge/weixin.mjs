@@ -58,7 +58,9 @@ async function main() {
   let pausedUntil = 0
   const failure = error => {
     if (error.expired) pausedUntil = Date.now() + 3600000
-    console.error(error.expired ? 'SESSION_EXPIRED: login again; paused for one hour' : 'REQUEST_FAILED: queued messages remain pending')
+    console.error(error.expired ? 'SESSION_EXPIRED: login again; paused for one hour'
+      : error.code === -2 ? 'SEND_REJECTED: waiting for a new owner message; digest remains queued'
+      : 'REQUEST_FAILED: queued messages remain pending')
   }
   setInterval(() => {
     if (Date.now() >= pausedUntil) bridge.deliver().catch(failure)

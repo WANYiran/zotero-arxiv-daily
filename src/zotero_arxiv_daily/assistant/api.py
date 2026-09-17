@@ -134,4 +134,10 @@ def create_app(store=None, token=None, model=None):
                 raise HTTPException(409, "Delivery lease is stale or already acknowledged")
         return {"ok": True}
 
+    @app.post("/outbox/release", dependencies=auth)
+    def release(body: AckInput):
+        if not store.release(body.id, body.lease_token):
+            raise HTTPException(409, "Delivery lease is stale or already acknowledged")
+        return {"ok": True}
+
     return app

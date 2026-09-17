@@ -75,6 +75,41 @@ test('no conversation context means no delivery claim', async () => {
   await bridge.deliver()
 })
 
+test('rejected context releases its lease and pauses until a fresh owner message', async () => {
+  const calls = [], state = { context: 'old', lastIncoming: '9' }
+  const rejected = new Error('rejected'); rejected.code = -2
+  let fail = true
+  const bridge = new WeixinBridge({ request: async () => { if (fail) throw rejected; return { message_id: 'receipt' } } },
+    async endpoint => { calls.push(endpoint); return { item: { id: 1, text: '日报', lease_token: 'lease' } } },
+    { owner: 'owner', bot: 'bot' }, state, () => {})
+  await assert.rejects(bridge.deliver())
+  assert.deepEqual(calls, ['/outbox/claim', '/outbox/release'])
+  await bridge.deliver()
+  assert.equal(calls.length, 2)
+  await bridge.receiveBatch({ msgs: [message] })
+  assert.equal(state.blocked, true, 'replayed incoming ID must not reopen a rejected context')
+  await bridge.receiveBatch({ msgs: [{ ...message, message_id: 10, context_token: 'fresh' }] })
+  assert.equal(state.blocked, false)
+  fail = false
+  await bridge.deliver()
+  assert.equal(calls.at(-1), '/outbox/ack')
+})
+
+test('an old send rejection does not block a newer inbound context', async () => {
+  const state = { context: 'old', lastIncoming: '9' }, calls = []
+  const rejected = new Error('rejected'); rejected.code = -2
+  let bridge
+  bridge = new WeixinBridge({ request: async () => {
+    await bridge.receiveBatch({ msgs: [{ ...message, message_id: 10, context_token: 'fresh' }] })
+    throw rejected
+  } }, async endpoint => { calls.push(endpoint); return { item: { id: 1, text: '日报', lease_token: 'lease' } } },
+  { owner: 'owner', bot: 'bot' }, state, () => {})
+  await assert.rejects(bridge.deliver())
+  assert.equal(state.blocked, false)
+  assert.equal(state.context, 'fresh')
+  assert.equal(calls.at(-1), '/outbox/release')
+})
+
 test('reject credential forwarding outside official HTTPS hosts', () => {
   for (const url of ['http://ilinkai.weixin.qq.com', 'https://weixin.qq.com.attacker.com', 'https://ilinkai.weixin.qq.com@attacker.com', 'https://ilinkai.weixin.qq.com:444']) {
     assert.throws(() => trustedBase(url))

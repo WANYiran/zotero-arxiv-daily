@@ -40,6 +40,20 @@ def test_immutable_digest_and_persistent_followup(store):
     assert first["id"] != later["id"]
 
 
+def test_rejected_delivery_release_is_fenced_and_does_not_mark_delivered(store):
+    store.enqueue("test", "a message")
+    first = store.claim()
+    assert not store.release(first["id"], "wrong-token")
+    assert store.release(first["id"], first["lease_token"])
+    second = store.claim()
+    assert second["id"] == first["id"]
+    assert second["lease_token"] != first["lease_token"]
+    assert not store.acknowledge(first["id"], first["lease_token"])
+    assert not store.release(first["id"], first["lease_token"])
+    assert store.acknowledge(second["id"], second["lease_token"])
+    assert not store.release(second["id"], second["lease_token"])
+
+
 def test_same_day_revision_keeps_original_reference(store):
     old = store.put_digest("2026-09-17", papers())
     new = store.put_digest("2026-09-17", papers("revised"))
