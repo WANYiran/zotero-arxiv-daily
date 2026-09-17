@@ -89,6 +89,11 @@ export class WeixinBridge {
       const text = (message.item_list ?? []).filter(item => item.type === 1)
         .map(item => item.text_item?.text ?? '').join('\n').trim()
       if (!text || text.length > 3000 || message.message_id === undefined) continue
+      const incomingId = String(message.message_id)
+      if (message.context_token && this.state.lastIncoming !== incomingId) {
+        this.state.blocked = false
+        this.state.lastIncoming = incomingId
+      }
       if (message.context_token) {
         this.state.context = message.context_token
         this.save(this.state)
@@ -103,17 +108,29 @@ export class WeixinBridge {
   }
 
   async deliver() {
-    if (this.delivering || !this.state.context) return
+    if (this.delivering || !this.state.context || this.state.blocked) return
     this.delivering = true
     try {
       const { item } = await this.assistant('/outbox/claim')
       if (!item) return
-      const result = await this.weixin.request('sendmessage', { msg: {
+      const incomingVersion = this.state.lastIncoming
+      const context = this.state.context
+      let result
+      try { result = await this.weixin.request('sendmessage', { msg: {
         from_user_id: '', to_user_id: this.account.owner,
         client_id: 'paper-' + createHash('sha256').update(this.account.bot + ':' + item.id).digest('hex'),
-        message_type: 2, message_state: 2, context_token: this.state.context,
+        message_type: 2, message_state: 2, context_token: context,
         item_list: [{ type: 1, text_item: { text: item.text } }],
-      } }, 30000)
+      } }, 30000) } catch (error) {
+        if (error.code === -2) {
+          // A definite backend rejection is not delivery. Wait for a fresh inbound
+          // message instead of repeatedly retrying a context the backend rejected.
+          this.state.blocked = this.state.lastIncoming === incomingVersion && this.state.context === context
+          this.save(this.state)
+          await this.assistant('/outbox/release', { id: item.id, lease_token: item.lease_token })
+        }
+        throw error
+      }
       // The live backend can return only a server message_id, without a ret field.
       // That receipt confirms delivery; an empty response still does not.
       if (result.ret !== 0 && !result.message_id) throw new Error('Weixin did not confirm delivery')

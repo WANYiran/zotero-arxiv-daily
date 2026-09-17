@@ -122,3 +122,11 @@ class Store:
                     value = json.dumps({"digest_id": digest_id, "numbers": [], "history": []})
                     db.execute("INSERT INTO state VALUES ('conversation',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (value,))
             return ok
+
+    def release(self, item_id: str, token: str) -> bool:
+        """Release an explicitly rejected send, fenced by its current lease token."""
+        with self.connection() as db:
+            return db.execute(
+                "UPDATE outbox SET lease_until=0,lease_token=NULL WHERE id=? AND lease_token=? AND delivered=0",
+                (item_id, token),
+            ).rowcount == 1
