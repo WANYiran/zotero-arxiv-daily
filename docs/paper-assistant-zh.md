@@ -145,6 +145,34 @@ docker compose -f deploy/compose.yaml --profile wechat up -d --build
 
 ## 验证与维护
 
+GitHub 的 CI 支持手动选择 `verify_zotero=true`，检查 ID 与密钥是否匹配、个人库读取权限、只读权限和摘要条目数量。日志不输出密钥、用户 ID、论文标题或摘要。若已设置 `ASSISTANT_URL`，还会检查 HTTPS 证书、健康状态和令牌认证。
+
+### 没有域名时使用 IP HTTPS
+
+可使用 Let’s Encrypt 的短期 IP 证书，无须购买域名。Certbot 5.4 支持 `--ip-address` 和 `--preferred-profile shortlived`。证书只有约六天有效期，必须自动续期；公网 TCP 80 用于验证，443 用于服务访问。
+
+本仓库提供 `deploy/compose.https.yaml` 和 `deploy/nginx-ip.conf`，使用 `deploy/letsencrypt/live/paper-assistant-ip/` 下的证书，以及 `deploy/acme/` 作为 HTTP 验证目录。这两个目录已被 Git 忽略。首次签发前需要先运行只提供验证目录的 HTTP 服务；申请命令如下（替换真实 IP）：
+
+```sh
+docker run --rm \
+  -v "$PWD/deploy/letsencrypt:/etc/letsencrypt" \
+  -v "$PWD/deploy/acme:/var/www/acme" \
+  certbot/certbot:v5.4.0 certonly --non-interactive --agree-tos \
+  --register-unsafely-without-email --preferred-profile shortlived \
+  --webroot --webroot-path /var/www/acme --ip-address YOUR_PUBLIC_IP \
+  --cert-name paper-assistant-ip
+```
+
+证书签发后停止临时 HTTP 服务，启动正式入口：
+
+```sh
+docker compose -p paper-assistant -f deploy/compose.yaml -f deploy/compose.https.yaml up -d gateway
+```
+
+代码安装在 `/opt/paper-assistant` 时，可将 `deploy/paper-assistant-certificate.{service,timer}` 安装到 `/etc/systemd/system/`，运行 `systemctl daemon-reload` 和 `systemctl enable --now paper-assistant-certificate.timer`。定时器每日检查两次，续期后校验并重载 Nginx。用 `sudo sh deploy/renew-ip-certificate.sh --dry-run` 验证续期路径，用 `journalctl -u paper-assistant-certificate.service` 查看结果；更改安装目录时要同步修改 service 的路径。
+
+官方参考：[Let’s Encrypt 的 Certbot IP 证书说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot/)。
+
 ```sh
 uv run pytest
 cd bridge

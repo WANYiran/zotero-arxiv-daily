@@ -23,3 +23,5 @@ data/
 *.memory-card.json
 bridge/node_modules/
 deploy/.env
+deploy/letsencrypt/
+deploy/acme/
