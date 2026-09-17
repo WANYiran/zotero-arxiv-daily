@@ -7,7 +7,7 @@
 1. **收集与排序**：GitHub Actions 检索新论文，用 Zotero 文献摘要做相似度排序。排序模型在 Actions 本地运行，不需要模型 API。默认关闭全文下载。
 2. **稳定引用**：服务把每份日报保存为不可变快照，日期加内容摘要构成日报编号。相同内容重试不会重复入队；同一天内容改变则产生另一个版本，不改变旧编号。
 3. **持续对话**：云服务器保存会话和偏好；“它”“这篇”沿用上次选择的论文。收到新一期日报后切到新一期；也可以指定旧日报编号。
-4. **收发通道**：独立 Wechaty 桥接进程，只处理指定用户发来的私聊文字，只给这个用户发消息。不处理群聊，不自动加好友。
+4. **收发通道**：独立微信桥接进程，只处理绑定用户发来的私聊文字，只给这个用户发消息。不处理群聊，不自动加好友。优先使用腾讯公开的 iLink 协议，保留 Wechaty 作为备选。
 5. **模型可选**：无模型时能看日报、原始摘要、链接和修改偏好。解读、比较和研究启发需另外接入兼容 Chat Completions 的模型服务。
 
 ```mermaid
@@ -16,15 +16,15 @@ flowchart LR
     A[arXiv HCI / AI] --> G
     G -->|HTTPS + 服务令牌| S[云服务器论文助手]
     S <--> D[(SQLite 日报 / 偏好 / 会话 / 发件队列)]
-    S <--> B[Wechaty 桥接]
+    S <--> B[微信文字桥接]
     B <--> W[你的个人微信]
     S -. 按需解读 .-> M[可选模型服务]
 ```
 
 ## 当前边界
 
-- **代码和模拟测试不等于真实微信已登录。** 个人微信采用第三方 Wechaty Puppet Service，不是腾讯提供的通用个人聊天 API。需要实际可用的供应商服务及 token；可用性和服务条件须在部署时核验，项目不附送该服务。
-- 桥接区分机器人登录账号与接收日报的个人微信账号。你从接收账号给机器人发消息；机器人自身发送的消息会被忽略以防循环。只有一个账号时不能直接按此设计完成双向聊天。
+- **代码和模拟测试不等于真实微信已登录。** 首选适配器依据腾讯 `openclaw-weixin` 2.4.9 的公开协议自行实现，仅支持文字，不是官方插件本身；无需安装有通用工具执行能力的 OpenClaw。扫码后绑定扫码用户为唯一接收者。
+- 首次登录后要给机器人发送“帮助”，取得会话上下文后才能发送排队消息。会话令牌有效期和主动发送限制由微信后端决定，持续每日推送必须实测；过期或发送失败时保留队列，不标记成功。备用 Wechaty 方案才需要另一个机器人微信号和第三方服务 token。
 - 无模型时不生成中文翻译、总结或比较。没有全文时，回答依据仅限摘要，不能据此确认未提供的实验细节。
 - 暂未实现搜索整个 Zotero 库进行问答、自动写入 Zotero、任意自然语言修改配置。Zotero 仅用于上游个性化排序。
 - 本服务为单用户单进程设计，启动一个 worker。SQLite 目录需持久化并备份。
@@ -56,7 +56,7 @@ PYTHONPATH=src python -m zotero_arxiv_daily.assistant.demo --interactive
 
 ## 云服务器部署
 
-准备 Docker Compose 和可供 GitHub 访问的 HTTPS 域名。开始时可以仅运行核心服务，无需微信或模型 token。
+准备 Docker Compose 和可供 GitHub 访问的 HTTPS 地址（域名或带证书的 IP）。开始时可以仅运行核心服务，无需微信或模型 token。
 
 ```sh
 git clone --branch feature/paper-assistant https://github.com/WANYiran/zotero-arxiv-daily.git
@@ -87,6 +87,26 @@ curl http://127.0.0.1:8080/health
 聊天默认 `deliver:false` 仅返回结果，微信桥接设为 `true` 将回复排队。日报默认 `deliver:true`。单篇上传正文最多 16000 字符，总请求限制 2 MB；一次问答最多选择 3 篇。
 
 ### 连接个人微信
+
+首选腾讯官方项目公开的 iLink 协议：[协议文档](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md)。本项目实现了独立、无额外 npm 依赖的文字适配器，不启动通用 AI Agent，不执行微信消息中的系统命令。
+
+```sh
+docker compose -p paper-assistant -f deploy/compose.yaml build weixin
+docker compose -p paper-assistant -f deploy/compose.yaml run --rm --no-deps weixin node weixin.mjs login-start
+docker compose -p paper-assistant -f deploy/compose.yaml run --rm --no-deps weixin node weixin.mjs login-poll
+```
+
+将 `login-start` 返回的临时 `qr_url` 编码为二维码，用**希望接收日报的微信号**扫码授权。登录凭证仅写入 `weixin-session` 卷中权限为 600 的文件，日志不显示凭证。出现 `need_verifycode` 时，将手机显示的验证码私密写入该卷的 `/data/verify-code`，再次运行 `login-poll`；不要把验证码提交到仓库。二维码过期时重新开始。
+
+看到 `LOGIN_CONFIRMED` 后启动：
+
+```sh
+docker compose -p paper-assistant -f deploy/compose.yaml --profile weixin up -d weixin
+```
+
+在微信的机器人对话中发送“帮助”完成首次会话。适配器使用扫码用户 ID 作为唯一允许的发送者和接收者；处理完成后才推进拉取游标，只有微信明确返回成功后才确认发件队列。不要同时运行两种桥接器，它们会竞争同一发件队列。重新绑定不同用户需独立部署，避免把原用户日报交给新用户。
+
+#### 备选：Wechaty
 
 使用 Wechaty SDK 1.20.2 / Puppet Service 1.18.2，接口已对照安装包声明检查。服务参考：<https://wechaty.js.org/docs/puppet-services/>。文档列出的服务不保证当前都能购买或登录。
 
@@ -184,4 +204,4 @@ npm test
 
 上线前仍需验证服务器部署、微信服务可登录性、真实 Zotero 读取、模型质量（如开启）、消息收发。安装开发时没有读取或发送你的微信消息。
 
-备份 `assistant-data` 和 `wechat-session` 卷；后者含登录会话，应私密保存。数据库保留日报和对话，需按个人保留周期维护。本版没有多用户隔离、动态扩缩容或管理员后台。
+备份 `assistant-data` 和使用中的 `weixin-session` 或 `wechat-session` 卷；会话卷含登录凭证，应私密保存。数据库保留日报和对话，需按个人保留周期维护。本版没有多用户隔离、动态扩缩容或管理员后台。

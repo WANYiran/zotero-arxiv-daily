@@ -28,7 +28,22 @@ services:
     depends_on:
       assistant:
         condition: service_healthy
+  weixin:
+    profiles: [weixin]
+    build:
+      context: ../bridge
+      dockerfile: Dockerfile.weixin
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASSISTANT_URL: http://assistant:8080
+    volumes:
+      - weixin-session:/data
+    depends_on:
+      assistant:
+        condition: service_healthy
 
 volumes:
   assistant-data:
   wechat-session:
+  weixin-session:
