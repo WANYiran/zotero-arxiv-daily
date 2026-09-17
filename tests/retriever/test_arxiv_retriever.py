@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 
 import feedparser
+import pytest
 
 from zotero_arxiv_daily.retriever.arxiv_retriever import ArxivRetriever, _run_with_hard_timeout
 import zotero_arxiv_daily.retriever.arxiv_retriever as arxiv_retriever
@@ -16,6 +17,25 @@ def _sleep_and_return(value: str, delay_seconds: float) -> str:
 
 def _raise_runtime_error() -> None:
     raise RuntimeError("boom")
+
+
+@pytest.mark.parametrize("full_text", [False, True])
+def test_conversion_throttles_only_full_text_downloads(config, monkeypatch, full_text):
+    config.source.arxiv.fetch_full_text = full_text
+    retriever = ArxivRetriever(config)
+    raw = SimpleNamespace(title="A paper", authors=[], summary="An abstract",
+                          pdf_url="https://arxiv.org/pdf/2609.00001", entry_id="https://arxiv.org/abs/2609.00001")
+    delays, downloads = [], []
+    monkeypatch.setattr(retriever, "_retrieve_raw_papers", lambda: [raw, raw])
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.base.sleep", delays.append)
+    def download(paper):
+        downloads.append(paper)
+        return "Full text"
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_tar", download)
+    papers = retriever.retrieve_papers()
+    assert [p.abstract for p in papers] == ["An abstract", "An abstract"]
+    assert delays == ([1, 1] if full_text else [])
+    assert len(downloads) == (2 if full_text else 0)
 
 
 def test_arxiv_retriever(config, mock_feedparser, monkeypatch):

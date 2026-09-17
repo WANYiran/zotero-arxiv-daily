@@ -110,6 +110,9 @@ def _extract_text_from_tar_worker(source_url: str, paper_id: str, paper_title: s
 class ArxivRetriever(BaseRetriever):
     def __init__(self, config):
         super().__init__(config)
+        # Abstract-only conversion uses already-fetched metadata and makes no requests.
+        # API retrieval above remains separately rate limited.
+        self.conversion_delay = 1 if self.retriever_config.get("fetch_full_text", True) else 0
         if self.config.source.arxiv.category is None:
             raise ValueError("category must be specified for arxiv.")
 
