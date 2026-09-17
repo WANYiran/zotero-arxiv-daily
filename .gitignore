@@ -17,3 +17,9 @@ models
 test-compose.yml
 outputs
 config/private.yaml
+data/
+*.sqlite3*
+*.ses
+*.memory-card.json
+bridge/node_modules/
+deploy/.env

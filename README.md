@@ -5,6 +5,8 @@
 
 <h3 align="center">Zotero-arXiv-Daily</h3>
 
+**Personal fork extension:** [HCI / AI 微信论文助手：功能、Zotero 密钥、部署和验证](docs/paper-assistant-zh.md). Adds optional no-LLM operation, durable paper Q&A, preferences, and a single-owner Wechaty bridge. Real WeChat login and cloud deployment require your own provider and server configuration.
+
 <div align="center">
 
   [![Status](https://img.shields.io/badge/status-active-success.svg)]()

@@ -1,0 +1,31 @@
+defaults:
+  - base
+  - _self_
+
+zotero:
+  user_id: ${oc.env:ZOTERO_ID}
+  api_key: ${oc.env:ZOTERO_KEY}
+
+source:
+  arxiv:
+    category: [cs.HC, cs.AI, cs.LG, cs.CL, cs.CV]
+    include_cross_list: true
+    fetch_full_text: false
+
+email:
+  enabled: false
+
+llm:
+  enabled: false
+
+executor:
+  source: [arxiv]
+  reranker: local
+  max_paper_num: 10
+  debug: false
+
+assistant:
+  enabled: true
+  url: ${oc.env:ASSISTANT_URL}
+  token: ${oc.env:ASSISTANT_TOKEN}
+  deliver: true

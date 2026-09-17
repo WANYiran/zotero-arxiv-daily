@@ -10,6 +10,19 @@ on:
       - main
 
 jobs:
+  wechat-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate bridge
+        working-directory: bridge
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          node --input-type=module -e 'import { WechatyBuilder } from "wechaty"; WechatyBuilder.build({puppet:"wechaty-puppet-service"});'
   pytest:
     runs-on: ubuntu-latest
     steps:
