@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { WeixinApi, WeixinBridge, trustedBase, writePrivate } from './weixin-api.mjs'
+import { WeixinApi, WeixinBridge, trustedBase, writePrivate, parsePayload } from './weixin-api.mjs'
 
 const message = { message_type: 1, message_id: 9, from_user_id: 'owner', context_token: 'context',
   item_list: [{ type: 1, text_item: { text: '帮助' } }] }
@@ -52,6 +52,24 @@ test('unconfirmed send is never acknowledged', async () => {
   assert.equal(bridge.delivering, false)
 })
 
+test('server message ID confirms a send even when ret is omitted', async () => {
+  const calls = []
+  const bridge = new WeixinBridge({ request: async () => ({ message_id: '18446744073709551615' }) }, async endpoint => {
+    calls.push(endpoint); return { item: { id: 1, text: '日报', lease_token: 'lease' } }
+  }, { owner: 'owner', bot: 'bot' }, { context: 'context' }, () => {})
+  await bridge.deliver()
+  assert.deepEqual(calls, ['/outbox/claim', '/outbox/ack'])
+})
+
+test('uint64 IDs remain distinct and quoted message text is untouched', () => {
+  const first = parsePayload('{"message_id":18446744073709551614,"text":"message_id:18446744073709551614"}')
+  const second = parsePayload('{"message_id":18446744073709551615}')
+  assert.equal(first.message_id, '18446744073709551614')
+  assert.equal(second.message_id, '18446744073709551615')
+  assert.notEqual(first.message_id, second.message_id)
+  assert.equal(first.text, 'message_id:18446744073709551614')
+})
+
 test('no conversation context means no delivery claim', async () => {
   const bridge = new WeixinBridge({}, () => assert.fail('must not claim'), { owner: 'owner', bot: 'bot' }, {}, () => {})
   await bridge.deliver()
@@ -67,7 +85,7 @@ test('reject credential forwarding outside official HTTPS hosts', () => {
 test('protocol uses auth only for POST and handles expired sessions without leaking response', async () => {
   const calls = []
   const api = new WeixinApi(undefined, 'secret', async (url, options) => {
-    calls.push(options); return { ok: true, json: async () => ({ ret: -14, errmsg: 'private details' }) }
+    calls.push(options); return { ok: true, text: async () => JSON.stringify({ ret: -14, errmsg: 'private details' }) }
   })
   await assert.rejects(api.request('getupdates', { get_updates_buf: '' }), error => error.expired && !error.message.includes('private'))
   assert.equal(calls[0].headers.Authorization, 'Bearer secret')

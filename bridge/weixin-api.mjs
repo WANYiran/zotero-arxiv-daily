@@ -7,6 +7,17 @@ import path from 'node:path'
 export const DEFAULT_BASE = 'https://ilinkai.weixin.qq.com'
 const VERSION = '2.4.9'
 
+export function parsePayload(text) {
+  return JSON.parse(text, (key, value, context) => {
+    if (['message_id', 'msg_id', 'svr_id'].includes(key) && typeof value === 'number') {
+      if (context?.source) return context.source
+      if (!Number.isSafeInteger(value)) throw new Error('Lossless message ID parsing unavailable')
+      return String(value)
+    }
+    return value
+  })
+}
+
 export function trustedBase(value) {
   const url = new URL(value)
   if (url.protocol !== 'https:' || !url.hostname.endsWith('.weixin.qq.com') ||
@@ -53,9 +64,11 @@ export class WeixinApi {
       redirect: 'error', signal: AbortSignal.timeout(timeout),
     })
     if (!response.ok) throw new Error('Weixin HTTP ' + response.status)
-    const data = await response.json()
+    const data = parsePayload(await response.text())
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Weixin response')
     if ((data.ret !== undefined && data.ret !== 0) || (data.errcode !== undefined && data.errcode !== 0)) {
       const error = new Error('Weixin request rejected')
+      error.code = typeof data.errcode === 'number' ? data.errcode : data.ret
       error.expired = data.ret === -14 || data.errcode === -14
       throw error
     }
@@ -101,7 +114,9 @@ export class WeixinBridge {
         message_type: 2, message_state: 2, context_token: this.state.context,
         item_list: [{ type: 1, text_item: { text: item.text } }],
       } }, 30000)
-      if (result.ret !== 0) throw new Error('Weixin did not confirm delivery')
+      // The live backend can return only a server message_id, without a ret field.
+      // That receipt confirms delivery; an empty response still does not.
+      if (result.ret !== 0 && !result.message_id) throw new Error('Weixin did not confirm delivery')
       await this.assistant('/outbox/ack', { id: item.id, lease_token: item.lease_token })
     } finally { this.delivering = false }
   }
