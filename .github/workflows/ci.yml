@@ -1,6 +1,11 @@
 name: CI
 on:
   workflow_dispatch:
+    inputs:
+      verify_zotero:
+        description: Check configured Zotero secrets without printing library content
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -10,7 +15,20 @@ on:
       - main
 
 jobs:
+  zotero-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_zotero
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify read-only Zotero access
+        env:
+          ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
+          ZOTERO_KEY: ${{ secrets.ZOTERO_KEY }}
+        run: python3 scripts/check_zotero.py
   wechat-bridge:
+    if: ${{ !inputs.verify_zotero }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,6 +42,7 @@ jobs:
           npm test
           node --input-type=module -e 'import { WechatyBuilder } from "wechaty"; WechatyBuilder.build({puppet:"wechaty-puppet-service"});'
   pytest:
+    if: ${{ !inputs.verify_zotero }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
