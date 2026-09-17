@@ -1,0 +1,12 @@
+{
+  "name": "zotero-paper-assistant-wechat-bridge",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node index.mjs", "test": "node --test *.test.mjs" },
+  "dependencies": {
+    "qrcode-terminal": "0.12.0",
+    "wechaty": "1.20.2",
+    "wechaty-puppet-service": "1.18.2"
+  }
+}

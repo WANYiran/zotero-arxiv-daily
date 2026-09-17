@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew the paper assistant IP certificate and reload HTTPS
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/paper-assistant/deploy/renew-ip-certificate.sh
+TimeoutStartSec=15min

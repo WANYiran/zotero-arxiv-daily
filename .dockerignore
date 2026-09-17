@@ -1,0 +1,10 @@
+.git
+.env
+deploy/.env
+.venv
+data
+outputs
+bridge/node_modules
+**/__pycache__
+**/*.sqlite3*
+**/*.memory-card.json

@@ -6,6 +6,7 @@ on:
 
 jobs:
   calculate-and-send:
+    if: vars.ASSISTANT_ENABLED != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -1,0 +1,6 @@
+FROM node:22-slim
+WORKDIR /app
+RUN mkdir /data && chown node /data
+COPY bridge.mjs weixin-api.mjs weixin.mjs ./
+USER node
+CMD ["node", "weixin.mjs"]

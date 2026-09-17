@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the paper assistant IP certificate twice daily
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
